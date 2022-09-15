@@ -1,0 +1,11 @@
+{
+    "reddit": {
+        "appID": "",
+        "appSecret": ""
+    },
+    "discord": {
+        "token": "",
+        "prefix": "+",
+        "freeGamesChannel": 0
+    }
+}
