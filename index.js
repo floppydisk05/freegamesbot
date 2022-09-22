@@ -1,101 +1,81 @@
-const RedditScraper = require("reddit-scraper");
-const log = require('npmlog');
-const fs = require('fs');
-const config = require('./config.json');
+// NPM Modules
+const log = require("npmlog");
+const fs = require("fs");
+let Watcher = require("feed-watcher");
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
-let postedRAW = fs.readFileSync('posted.json');
-let posted = JSON.parse(postedRAW);
+// Data files
+let posted = require("./posted.json");
+const config = require("./config.json");
+const { post } = require("request");
 
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const { token } = require('./config.json');
-const { title } = require("process");
-const { url } = require("inspector");
-
-// Create a new client instance
+let watcher = new Watcher(`https://www.reddit.com/r/${config.reddit.subreddit}.rss`, 10);
 const client = new Client({
-	intents: [
-		GatewayIntentBits.Guilds,
-		GatewayIntentBits.GuildMessages,
-		GatewayIntentBits.MessageContent,
-		GatewayIntentBits.GuildMembers,
-	],
-});
-// When the client is ready, run this code (only once)
-client.once('ready', () => {
-	log.info(`Logged in as ${client.user.username}`);
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+  ],
 });
 
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return false; 
-
-    if (message.content.startsWith(config.discord.prefix)) {
-        if (message.content === "+test") {
-            gaming(message);
-        }
-    }
+let post_channel;
+client.once("ready", () => {
+  log.info(`Logged in as ${client.user.username}#${client.user.discriminator}`);
+  post_channel = client.channels.cache.get("445824553604743178");
 });
 
 client.login(config.discord.token);
 
+// if not interval is passed, 60s would be set as default interval.
 
-async function gaming(msg) {
- 
-    const redditScraperOptions = {
-        AppId: config.reddit.appID,
-        AppSecret: config.reddit.appSecret
-    };
- 
-    const requestOptions = {
-        Pages: 20,
-        Records: 100,
-        SubReddit: "gamedeals",
-        SortType: "hot",
-    };
-    let titles = "";
- 
-    try {
-        log.info("Scraping r/gamedeals");
-        const redditScraper = new RedditScraper.RedditScraper(redditScraperOptions);
-        const scrapedData = await redditScraper.scrapeData(requestOptions);
-        //console.log(scrapedData);
-        let title, url;
-        let count = 0;
-        let cunt = 0;
-        log.info(`${requestOptions.Pages} pages / ${requestOptions.Records} records`);
-        /*scrapedData.forEach(post => {
-            cunt++;
-            title = post.data.title;
-            url = post.data.url_overridden_by_dest;
-            if (url === undefined) url = post.data.url;
-            if (title.includes("100%") && url !== undefined) {
-                if (!posted.includes(post.data.id)) {
-                    //console.log(`ID: ${post.data.id}\nTitle: ${title}\nURL: ${post.data.url_overridden_by_dest}`);
-                    titles += `${title}\n`;
-                    //posted.push(post.data.id);
-                    count++;
-                }
-            }
-            if (count === 1) return;
-        });*/
-        log.info(`Results: ${count}`);
-        //log.info(`FUCKING SHIT (${cunt})`);
+let current;
+// Check for new entries every n seconds.
+watcher.on("new entries", function (entries) {
+  entries.forEach(function (entry) {
+    gaming(entry, post_channel);
+  });
+});
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Start watching the feed.
+watcher
+  .start()
+  .then(function (entries) {
+    entries.forEach((entry) => {
+      gaming(entry, post_channel);
+    });
+  })
+  .catch(function (error) {
+    log.error(error);
+  });
 
-        let gamepost = scrapedData[0].data;
-        //return titles;
-        url = gamepost.url_overridden_by_dest;
-        if (url === undefined) url = gamepost.url;
-        if (url === undefined) url = "no";
-        const cringe = new EmbedBuilder()
-        	.setTitle(gamepost.title)
-        	.setURL(url)
-        	.setDescription("h")
-        	.setTimestamp();
-                        
-        msg.reply({embeds:[cringe]});
-    } catch (error) {
-        console.error(error);
-    }
+function gaming(entry, channel) {
+  if (
+    !posted.includes(entry.guid) &&
+    (entry.title.includes("FREE") || entry.title.includes("100%"))
+  ) {
+    log.info("Uncring: " + truncate(entry.title, 100));
+    posted.push(entry.guid);
+    fs.writeFileSync("posted.json", JSON.stringify(posted));
 
-    postedRAW = JSON.stringify(posted);
-    //fs.writeFileSync('posted.json', postedRAW);
-};
+    const gameEmbed = new EmbedBuilder()
+      .setTitle(entry.title)
+      .setURL(entry.link);
+    if (entry.image.url !== undefined) gameEmbed.setImage(entry.image.url);
+    channel.send({
+      content: config.discord.messagePrefix,
+      embeds: [gameEmbed],
+    });
+  } else {
+    log.info("Cringe: " + truncate(entry.title, 100));
+    return undefined;
+  }
+}
+
+function truncate(text, length) {
+  if (text.length > length) return text.substring(0, length) + "...";
+  else return text;
+}
+
+// Stop watching the feed.
+watcher.stop();
