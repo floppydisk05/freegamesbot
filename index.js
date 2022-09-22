@@ -60,7 +60,8 @@ function gaming(entry, channel) {
 
     const gameEmbed = new EmbedBuilder()
       .setTitle(entry.title)
-      .setURL(entry.link);
+      .setURL(entry.link)
+      .setTimestamp(entry.date);
     if (entry.image.url !== undefined) gameEmbed.setImage(entry.image.url);
     channel.send({
       content: config.discord.messagePrefix,
